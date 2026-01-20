@@ -125,6 +125,10 @@ export default function CreateChallengePage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  // Combined loading state - true during mutation OR during navigation
+  const isLoading = createChallenge.isPending || isNavigating;
 
   const handleSelectTemplate = (key: string) => {
     const template = templates.find(t => t.key === key);
@@ -188,6 +192,8 @@ export default function CreateChallengePage() {
         return;
       }
 
+      // Keep loading state while navigating
+      setIsNavigating(true);
       router.push(`/challenges/${challenge.id}`);
     } catch (err: unknown) {
       console.error('Failed to create challenge:', err);
@@ -517,10 +523,10 @@ export default function CreateChallengePage() {
             <Button
               className="w-full"
               onClick={handleCreate}
-              isLoading={createChallenge.isPending}
-              disabled={!name || metrics.length === 0}
+              isLoading={isLoading}
+              disabled={!name || metrics.length === 0 || isLoading}
             >
-              Create Challenge
+              {isNavigating ? 'Opening challenge...' : 'Create Challenge'}
             </Button>
             <Button
               variant="outline"

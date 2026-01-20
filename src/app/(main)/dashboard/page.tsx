@@ -94,9 +94,11 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {challenges?.map(challenge => (
-          <ChallengeCard key={challenge.id} challenge={challenge} />
-        ))}
+        <div className="flex flex-col gap-8">
+          {challenges?.map(challenge => (
+            <ChallengeCard key={challenge.id} challenge={challenge} />
+          ))}
+        </div>
       </div>
     </div>
   );

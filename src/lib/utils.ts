@@ -35,23 +35,43 @@ export function formatRelativeDate(date: string | Date): string {
   return formatDate(date);
 }
 
-export function getDayNumber(startDate: string, currentDate: string = new Date().toISOString()): number {
-  const start = new Date(startDate);
-  const current = new Date(currentDate);
-  start.setHours(0, 0, 0, 0);
-  current.setHours(0, 0, 0, 0);
+export function getDayNumber(startDate: string, currentDate?: string): number {
+  // Parse dates as local dates to avoid timezone issues
+  // startDate format: "YYYY-MM-DD"
+  const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+  const start = new Date(startYear, startMonth - 1, startDay);
+
+  let current: Date;
+  if (currentDate) {
+    const [curYear, curMonth, curDay] = currentDate.split('-').map(Number);
+    current = new Date(curYear, curMonth - 1, curDay);
+  } else {
+    current = new Date();
+    current.setHours(0, 0, 0, 0);
+  }
+
   const diffTime = current.getTime() - start.getTime();
   return Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
 }
 
 export function getDateForDay(startDate: string, dayNumber: number): string {
-  const start = new Date(startDate);
+  // Parse as local date to avoid timezone issues
+  const [year, month, day] = startDate.split('-').map(Number);
+  const start = new Date(year, month - 1, day);
   start.setDate(start.getDate() + dayNumber - 1);
-  return start.toISOString().split('T')[0];
+  // Format as YYYY-MM-DD in local time
+  const y = start.getFullYear();
+  const m = String(start.getMonth() + 1).padStart(2, '0');
+  const d = String(start.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function getTodayDateString(): string {
-  return new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export function calculateCompletionPercentage(passCount: number, totalRequired: number): number {

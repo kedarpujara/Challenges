@@ -5,12 +5,16 @@ import { createClient } from '@/lib/supabase/client';
 import type { DailyEntry, MetricEntry, Metric } from '@/types';
 import { getTodayDateString, getDayNumber } from '@/lib/utils';
 
-export function useDailyEntry(challengeId: string, participantId: string | undefined) {
+export function useDailyEntry(
+  challengeId: string,
+  participantId: string | undefined,
+  date?: string // Optional date, defaults to today
+) {
   const supabase = createClient();
-  const today = getTodayDateString();
+  const entryDate = date || getTodayDateString();
 
   return useQuery({
-    queryKey: ['daily-entry', challengeId, participantId, today],
+    queryKey: ['daily-entry', challengeId, participantId, entryDate],
     queryFn: async () => {
       if (!participantId) return null;
 
@@ -18,7 +22,7 @@ export function useDailyEntry(challengeId: string, participantId: string | undef
         .from('daily_entries')
         .select('*')
         .eq('participant_id', participantId)
-        .eq('entry_date', today)
+        .eq('entry_date', entryDate)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -39,15 +43,17 @@ export function useUpdateDailyEntry(challengeId: string) {
       metricsData,
       metrics,
       photoUrl,
+      entryDate, // Optional - defaults to today
     }: {
       participantId: string;
       startDate: string;
       metricsData: Record<string, MetricEntry>;
       metrics: Metric[];
       photoUrl?: string;
+      entryDate?: string;
     }) => {
-      const today = getTodayDateString();
-      const dayNumber = getDayNumber(startDate, today);
+      const targetDate = entryDate || getTodayDateString();
+      const dayNumber = getDayNumber(startDate, targetDate);
 
       // Calculate pass/fail counts
       const requiredMetrics = metrics.filter(m => m.required && !m.tracking);
@@ -71,7 +77,7 @@ export function useUpdateDailyEntry(challengeId: string) {
         .upsert({
           challenge_id: challengeId,
           participant_id: participantId,
-          entry_date: today,
+          entry_date: targetDate,
           day_number: dayNumber,
           metrics_data: metricsData,
           pass_count: passCount,
@@ -85,11 +91,12 @@ export function useUpdateDailyEntry(challengeId: string) {
         .single();
 
       if (error) throw error;
-      return data;
+      return { ...data, entryDate: targetDate };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (data, variables) => {
+      const entryDate = variables.entryDate || getTodayDateString();
       queryClient.invalidateQueries({
-        queryKey: ['daily-entry', challengeId, variables.participantId],
+        queryKey: ['daily-entry', challengeId, variables.participantId, entryDate],
       });
       queryClient.invalidateQueries({ queryKey: ['challenge', challengeId] });
       queryClient.invalidateQueries({ queryKey: ['challenges'] });
