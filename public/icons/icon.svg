@@ -1,0 +1,7 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#0c0a09"/>
+  <path d="M256 80C256 80 180 140 180 220C180 260 200 300 256 340C312 300 332 260 332 220C332 140 256 80 256 80Z" fill="#f97316"/>
+  <path d="M256 120C256 120 210 160 210 210C210 240 225 270 256 300C287 270 302 240 302 210C302 160 256 120 256 120Z" fill="#fb923c"/>
+  <path d="M256 160C256 160 230 185 230 210C230 230 240 250 256 270C272 250 282 230 282 210C282 185 256 160 256 160Z" fill="#fdba74"/>
+  <text x="256" y="420" font-family="system-ui, sans-serif" font-size="48" font-weight="bold" fill="#f97316" text-anchor="middle">CHALLENGES</text>
+</svg>
