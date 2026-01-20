@@ -12,6 +12,10 @@ export default function JoinChallengePage() {
 
   const [inviteCode, setInviteCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  // Combined loading state - true during mutation OR navigation
+  const isLoading = joinChallenge.isPending || isNavigating;
 
   const handleJoin = async () => {
     if (!inviteCode || inviteCode.length !== 6) {
@@ -22,6 +26,8 @@ export default function JoinChallengePage() {
     setError(null);
     try {
       const challenge = await joinChallenge.mutateAsync(inviteCode);
+      // Keep loading while navigating
+      setIsNavigating(true);
       router.push(`/challenges/${challenge.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to join challenge');
@@ -73,10 +79,10 @@ export default function JoinChallengePage() {
             <Button
               className="w-full"
               onClick={handleJoin}
-              isLoading={joinChallenge.isPending}
-              disabled={inviteCode.length !== 6}
+              isLoading={isLoading}
+              disabled={inviteCode.length !== 6 || isLoading}
             >
-              Join Challenge
+              {isNavigating ? 'Opening challenge...' : 'Join Challenge'}
             </Button>
           </div>
         </Card>

@@ -14,57 +14,61 @@ export function useChallenges() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Get challenges owned by user
-      const { data: ownedChallenges } = await supabase
-        .from('challenges')
-        .select('*')
-        .eq('owner_id', user.id)
-        .eq('status', 'active');
+      // PARALLEL: Get owned challenges AND participations at the same time
+      const [ownedResult, participationsResult] = await Promise.all([
+        supabase
+          .from('challenges')
+          .select('*')
+          .eq('owner_id', user.id)
+          .eq('status', 'active'),
+        supabase
+          .from('challenge_participants')
+          .select('challenge_id')
+          .eq('user_id', user.id)
+          .eq('status', 'active'),
+      ]);
 
-      // Get challenges user participates in
-      const { data: participations } = await supabase
-        .from('challenge_participants')
-        .select('challenge_id')
-        .eq('user_id', user.id)
-        .eq('status', 'active');
-
-      const participatedIds = participations?.map(p => p.challenge_id) || [];
+      const ownedChallenges = ownedResult.data || [];
+      const participatedIds = participationsResult.data?.map(p => p.challenge_id) || [];
 
       // Combine owned and participated challenges
       const allChallengeIds = [
-        ...(ownedChallenges?.map(c => c.id) || []),
+        ...ownedChallenges.map(c => c.id),
         ...participatedIds,
       ];
       const uniqueChallengeIds = Array.from(new Set(allChallengeIds));
 
       if (uniqueChallengeIds.length === 0) return [];
 
-      // Get full challenge data
-      const { data: challenges } = await supabase
-        .from('challenges')
-        .select('*')
-        .in('id', uniqueChallengeIds)
-        .eq('status', 'active');
+      const today = getTodayDateString();
+
+      // PARALLEL: Get challenges, participants, and today's entries all at once
+      const [challengesResult, participantsResult, entriesResult] = await Promise.all([
+        supabase
+          .from('challenges')
+          .select('*')
+          .in('id', uniqueChallengeIds)
+          .eq('status', 'active'),
+        supabase
+          .from('challenge_participants')
+          .select(`
+            *,
+            profile:profiles(*)
+          `)
+          .in('challenge_id', uniqueChallengeIds)
+          .eq('status', 'active'),
+        supabase
+          .from('daily_entries')
+          .select('*')
+          .in('challenge_id', uniqueChallengeIds)
+          .eq('entry_date', today),
+      ]);
+
+      const challenges = challengesResult.data;
+      const allParticipants = participantsResult.data;
+      const todayEntries = entriesResult.data;
 
       if (!challenges || challenges.length === 0) return [];
-
-      // Get all participants for these challenges
-      const { data: allParticipants } = await supabase
-        .from('challenge_participants')
-        .select(`
-          *,
-          profile:profiles(*)
-        `)
-        .in('challenge_id', uniqueChallengeIds)
-        .eq('status', 'active');
-
-      // Get today's entries
-      const today = getTodayDateString();
-      const { data: todayEntries } = await supabase
-        .from('daily_entries')
-        .select('*')
-        .in('challenge_id', uniqueChallengeIds)
-        .eq('entry_date', today);
 
       // Combine the data
       const result: ChallengeWithParticipants[] = challenges.map(challenge => {
@@ -95,34 +99,39 @@ export function useChallenge(id: string) {
   return useQuery({
     queryKey: ['challenge', id],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const today = getTodayDateString();
+
+      // PARALLEL: Get user, challenge, participants, and entries all at once
+      const [userResult, challengeResult, participantsResult, entriesResult] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase
+          .from('challenges')
+          .select('*')
+          .eq('id', id)
+          .single(),
+        supabase
+          .from('challenge_participants')
+          .select(`
+            *,
+            profile:profiles(*)
+          `)
+          .eq('challenge_id', id)
+          .eq('status', 'active'),
+        supabase
+          .from('daily_entries')
+          .select('*')
+          .eq('challenge_id', id)
+          .eq('entry_date', today),
+      ]);
+
+      const user = userResult.data.user;
       if (!user) throw new Error('Not authenticated');
 
-      const { data: challenge, error } = await supabase
-        .from('challenges')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const challenge = challengeResult.data;
+      if (challengeResult.error) throw challengeResult.error;
 
-      if (error) throw error;
-
-      // Get participants with profiles
-      const { data: participants } = await supabase
-        .from('challenge_participants')
-        .select(`
-          *,
-          profile:profiles(*)
-        `)
-        .eq('challenge_id', id)
-        .eq('status', 'active');
-
-      // Get today's entries for all participants
-      const today = getTodayDateString();
-      const { data: todayEntries } = await supabase
-        .from('daily_entries')
-        .select('*')
-        .eq('challenge_id', id)
-        .eq('entry_date', today);
+      const participants = participantsResult.data;
+      const todayEntries = entriesResult.data;
 
       const myParticipant = participants?.find(p => p.user_id === user.id);
       const todayEntry = todayEntries?.find(e => e.participant_id === myParticipant?.id);
@@ -224,19 +233,25 @@ export function useJoinChallenge() {
 
   return useMutation({
     mutationFn: async (inviteCode: string) => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      console.log('[useJoinChallenge] User:', user?.id, 'Auth error:', authError);
       if (!user) throw new Error('Not authenticated');
 
       // Find challenge by invite code
+      const normalizedCode = inviteCode.toUpperCase();
+      console.log('[useJoinChallenge] Looking for invite code:', normalizedCode);
+
       const { data: challenge, error: findError } = await supabase
         .from('challenges')
         .select('*')
-        .eq('invite_code', inviteCode.toUpperCase())
+        .eq('invite_code', normalizedCode)
         .eq('status', 'active')
         .single();
 
+      console.log('[useJoinChallenge] Challenge found:', challenge, 'Error:', findError);
+
       if (findError || !challenge) {
-        throw new Error('Invalid invite code');
+        throw new Error(`Invalid invite code. Error: ${findError?.message || 'Not found'}`);
       }
 
       // Check if already a participant

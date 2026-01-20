@@ -11,3 +11,7 @@ export { Avatar, AvatarGroup } from './Avatar';
 export { Progress, SegmentedProgress } from './Progress';
 
 export { Tabs, TabContent } from './Tabs';
+
+export { Modal } from './Modal';
+
+export { PhotoUpload } from './PhotoUpload';

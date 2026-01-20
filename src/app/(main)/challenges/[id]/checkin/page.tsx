@@ -2,11 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Check, X, Camera, Loader2 } from 'lucide-react';
-import { Button, Card, Input, SegmentedProgress } from '@/components/ui';
+import { ArrowLeft, Check, X, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button, Card, Input, SegmentedProgress, PhotoUpload } from '@/components/ui';
 import { useChallenge } from '@/hooks/useChallenge';
 import { useDailyEntry, useUpdateDailyEntry } from '@/hooks/useDailyEntry';
-import { evaluateMetric } from '@/lib/utils';
+import { evaluateMetric, getTodayDateString, getDayNumber, getDateForDay } from '@/lib/utils';
 import type { Metric, MetricEntry, MetricStatus } from '@/types';
 
 export default function CheckInPage() {
@@ -16,18 +16,27 @@ export default function CheckInPage() {
   const { data: challenge, isLoading: challengeLoading } = useChallenge(id);
   const participantId = challenge?.my_participant?.id;
 
-  const { data: existingEntry } = useDailyEntry(id, participantId);
+  // Selected date state - defaults to today
+  const [selectedDate, setSelectedDate] = useState(getTodayDateString());
+
+  const { data: existingEntry, isLoading: entryLoading } = useDailyEntry(id, participantId, selectedDate);
   const updateEntry = useUpdateDailyEntry(id);
 
   const [metricsData, setMetricsData] = useState<Record<string, MetricEntry>>({});
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Initialize from existing entry
+  // Initialize from existing entry or clear when date changes
   useEffect(() => {
     if (existingEntry?.metrics_data) {
       setMetricsData(existingEntry.metrics_data as Record<string, MetricEntry>);
+      setPhotoUrl(existingEntry.photo_url);
+    } else {
+      // Clear metrics when no entry exists for selected date
+      setMetricsData({});
+      setPhotoUrl(null);
     }
-  }, [existingEntry]);
+  }, [existingEntry, selectedDate]);
 
   if (challengeLoading || !challenge) {
     return (
@@ -39,6 +48,34 @@ export default function CheckInPage() {
 
   const metrics = challenge.metrics as Metric[];
   const requiredMetrics = metrics.filter(m => m.required && !m.tracking);
+
+  // Date navigation helpers
+  const today = getTodayDateString();
+  const currentDayNumber = getDayNumber(challenge.start_date, selectedDate);
+  const isToday = selectedDate === today;
+  const isFirstDay = currentDayNumber <= 1;
+  const isLastDay = currentDayNumber >= challenge.duration_days || selectedDate >= today;
+
+  const goToPreviousDay = () => {
+    if (isFirstDay) return;
+    setSelectedDate(getDateForDay(challenge.start_date, currentDayNumber - 1));
+  };
+
+  const goToNextDay = () => {
+    if (isLastDay) return;
+    setSelectedDate(getDateForDay(challenge.start_date, currentDayNumber + 1));
+  };
+
+  const goToToday = () => {
+    setSelectedDate(today);
+  };
+
+  // Format selected date for display
+  const formatDisplayDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
 
   // Calculate counts
   let passCount = 0;
@@ -98,11 +135,14 @@ export default function CheckInPage() {
         startDate: challenge.start_date,
         metricsData,
         metrics,
+        entryDate: selectedDate,
+        photoUrl: photoUrl || undefined,
       });
-      router.push(`/challenges/${id}`);
+      // Keep loading while navigating - don't reset isSaving on success
+      router.push('/checkin');
     } catch (error) {
       console.error('Failed to save entry:', error);
-    } finally {
+      // Only reset loading on error
       setIsSaving(false);
     }
   };
@@ -122,6 +162,44 @@ export default function CheckInPage() {
             <p className="text-sm text-muted-foreground">{challenge.name}</p>
           </div>
         </div>
+      </div>
+
+      {/* Date Picker */}
+      <div className="p-4 border-b border-border">
+        <div className="flex items-center justify-between">
+          <button
+            onClick={goToPreviousDay}
+            disabled={isFirstDay}
+            className={`p-2 rounded-lg ${isFirstDay ? 'text-muted-foreground/30' : 'text-foreground hover:bg-muted'}`}
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+
+          <div className="text-center">
+            <div className="font-semibold">Day {currentDayNumber}</div>
+            <div className="text-sm text-muted-foreground">
+              {formatDisplayDate(selectedDate)}
+              {isToday && <span className="text-accent ml-1">(Today)</span>}
+            </div>
+          </div>
+
+          <button
+            onClick={goToNextDay}
+            disabled={isLastDay}
+            className={`p-2 rounded-lg ${isLastDay ? 'text-muted-foreground/30' : 'text-foreground hover:bg-muted'}`}
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+        </div>
+
+        {!isToday && (
+          <button
+            onClick={goToToday}
+            className="mt-2 w-full text-sm text-accent hover:underline"
+          >
+            Go to today
+          </button>
+        )}
       </div>
 
       {/* Progress Bar */}
@@ -144,16 +222,26 @@ export default function CheckInPage() {
 
       {/* Metrics */}
       <div className="p-4 space-y-4">
-        {metrics.map(metric => (
-          <MetricInput
-            key={metric.id}
-            metric={metric}
-            entry={metricsData[metric.id]}
-            onStatusChange={(status) => handleStatusChange(metric.id, status)}
-            onValueChange={(value) => handleValueChange(metric, value)}
-            onCountChange={(value) => handleCountChange(metric.id, value)}
-          />
-        ))}
+        {entryLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-6 h-6 animate-spin text-accent" />
+          </div>
+        ) : (
+          metrics.map(metric => (
+            <MetricInput
+              key={metric.id}
+              metric={metric}
+              entry={metricsData[metric.id]}
+              onStatusChange={(status) => handleStatusChange(metric.id, status)}
+              onValueChange={(value) => handleValueChange(metric, value)}
+              onCountChange={(value) => handleCountChange(metric.id, value)}
+              challengeId={id}
+              entryDate={selectedDate}
+              photoUrl={photoUrl}
+              onPhotoChange={setPhotoUrl}
+            />
+          ))
+        )}
       </div>
 
       {/* Save Button */}
@@ -180,9 +268,13 @@ interface MetricInputProps {
   onStatusChange: (status: MetricStatus) => void;
   onValueChange: (value: number) => void;
   onCountChange: (value: number) => void;
+  challengeId: string;
+  entryDate: string;
+  photoUrl: string | null;
+  onPhotoChange: (url: string | null) => void;
 }
 
-function MetricInput({ metric, entry, onStatusChange, onValueChange, onCountChange }: MetricInputProps) {
+function MetricInput({ metric, entry, onStatusChange, onValueChange, onCountChange, challengeId, entryDate, photoUrl, onPhotoChange }: MetricInputProps) {
   const status = entry?.status || 'pending';
   const value = entry?.value;
 
@@ -215,7 +307,7 @@ function MetricInput({ metric, entry, onStatusChange, onValueChange, onCountChan
     );
   }
 
-  // Number metrics
+  // Number metrics - with quick pass/fail buttons and optional value entry
   if (metric.type === 'number') {
     const targetText = metric.comparison === 'lte'
       ? `< ${metric.target}`
@@ -227,21 +319,32 @@ function MetricInput({ metric, entry, onStatusChange, onValueChange, onCountChan
       <Card className="p-4">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <p className="font-medium">{metric.name}</p>
-              <p className="text-xs text-muted-foreground">Target: {targetText} {metric.unit}</p>
+              <p className="text-xs text-muted-foreground">
+                Target: {targetText} {metric.unit}
+                {!metric.required && ' • Optional'}
+              </p>
             </div>
-            <StatusIndicator status={status} />
-          </div>
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              placeholder={`Enter ${metric.unit || 'value'}`}
-              value={value || ''}
-              onChange={(e) => onValueChange(Number(e.target.value))}
-              className="flex-1"
+            <PassFailButtons
+              status={status}
+              onStatusChange={onStatusChange}
             />
           </div>
+          <Input
+            type="number"
+            placeholder={`Enter ${metric.unit || 'value'} (optional)`}
+            value={value ?? ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === '') {
+                // Clear value but keep current status
+                return;
+              }
+              onValueChange(Number(val));
+            }}
+            className="text-sm"
+          />
         </div>
       </Card>
     );
@@ -249,26 +352,36 @@ function MetricInput({ metric, entry, onStatusChange, onValueChange, onCountChan
 
   // Photo metrics
   if (metric.type === 'photo') {
+    const handlePhotoChange = (url: string | null) => {
+      onPhotoChange(url);
+      // Auto-set status based on photo presence
+      if (url) {
+        onStatusChange('pass');
+      } else {
+        onStatusChange('pending');
+      }
+    };
+
     return (
-      <Card className="p-4">
+      <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div>
             <p className="font-medium">{metric.name}</p>
             {!metric.required && <p className="text-xs text-muted-foreground">Optional</p>}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center"
-              onClick={() => {/* TODO: Implement photo upload */}}
-            >
-              <Camera className="w-5 h-5 text-muted-foreground" />
-            </button>
+          {!photoUrl && (
             <PassFailButtons
               status={status}
               onStatusChange={onStatusChange}
             />
-          </div>
+          )}
         </div>
+        <PhotoUpload
+          value={photoUrl}
+          onChange={handlePhotoChange}
+          challengeId={challengeId}
+          entryDate={entryDate}
+        />
       </Card>
     );
   }
@@ -323,20 +436,3 @@ function PassFailButtons({
   );
 }
 
-function StatusIndicator({ status }: { status: MetricStatus }) {
-  if (status === 'pass') {
-    return (
-      <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
-        <Check className="w-5 h-5 text-success" />
-      </div>
-    );
-  }
-  if (status === 'fail') {
-    return (
-      <div className="w-8 h-8 rounded-full bg-destructive/20 flex items-center justify-center">
-        <X className="w-5 h-5 text-destructive" />
-      </div>
-    );
-  }
-  return null;
-}
