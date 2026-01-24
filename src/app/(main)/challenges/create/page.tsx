@@ -24,13 +24,15 @@ import {
   Heart,
   Zap,
   Check,
+  Library,
+  CheckCircle,
 } from 'lucide-react';
 import { Button, Card, Input } from '@/components/ui';
 import { useCreateChallenge } from '@/hooks/useChallenge';
-import { METRICS_75_HARD, METRICS_75_SOFT, METRICS_30_DAY } from '@/lib/constants';
+import { METRICS_75_HARD, METRICS_75_SOFT, METRICS_30_DAY, PRESET_METRICS } from '@/lib/constants';
 import type { Metric } from '@/types';
 
-type Step = 'template' | 'customize' | 'metrics';
+type Step = 'template' | 'customize' | 'metrics' | 'presets';
 
 const METRIC_ICONS: Record<string, React.ReactNode> = {
   steps: <Footprints className="w-5 h-5" />,
@@ -126,6 +128,7 @@ export default function CreateChallengePage() {
   const [error, setError] = useState<string | null>(null);
   const [expandedMetric, setExpandedMetric] = useState<string | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   // Combined loading state - true during mutation OR during navigation
   const isLoading = createChallenge.isPending || isNavigating;
@@ -161,6 +164,20 @@ export default function CreateChallengePage() {
   const handleRemoveMetric = (id: string) => {
     setMetrics(metrics.filter(m => m.id !== id));
     if (expandedMetric === id) setExpandedMetric(null);
+  };
+
+  const handleAddPresetMetric = (preset: Metric) => {
+    // Create a unique copy of the preset with a new ID
+    const newMetric: Metric = {
+      ...preset,
+      id: `${preset.id}_${Date.now()}`,
+    };
+    setMetrics([...metrics, newMetric]);
+  };
+
+  const isMetricAdded = (presetId: string) => {
+    // Check if a metric with this preset's base id already exists
+    return metrics.some(m => m.id.startsWith(presetId));
   };
 
   const handleCreate = async () => {
@@ -372,6 +389,7 @@ export default function CreateChallengePage() {
           <button
             onClick={() => {
               if (step === 'template') router.back();
+              else if (step === 'presets') setStep('metrics');
               else if (step === 'metrics') setStep('customize');
               else setStep('template');
             }}
@@ -385,6 +403,7 @@ export default function CreateChallengePage() {
               {step === 'template' && 'Choose a template'}
               {step === 'customize' && 'Customize your challenge'}
               {step === 'metrics' && 'Edit metrics'}
+              {step === 'presets' && 'Add from library'}
             </p>
           </div>
         </div>
@@ -490,10 +509,16 @@ export default function CreateChallengePage() {
                 <p className="text-sm text-muted-foreground mb-3">
                   No metrics yet. Add what you want to track.
                 </p>
-                <Button variant="outline" onClick={() => setStep('metrics')}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Metrics
-                </Button>
+                <div className="flex gap-2 justify-center">
+                  <Button variant="outline" onClick={() => setStep('presets')}>
+                    <Library className="w-4 h-4 mr-2" />
+                    From Library
+                  </Button>
+                  <Button variant="outline" onClick={() => setStep('metrics')}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Custom
+                  </Button>
+                </div>
               </Card>
             ) : (
               <Card className="divide-y divide-border">
@@ -550,20 +575,119 @@ export default function CreateChallengePage() {
             {metrics.map(metric => renderMetricEditor(metric))}
           </div>
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={handleAddMetric}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Metric
-          </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setStep('presets')}
+            >
+              <Library className="w-4 h-4 mr-2" />
+              From Library
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleAddMetric}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Custom
+            </Button>
+          </div>
 
           <Button
             className="w-full"
             onClick={() => setStep('customize')}
           >
             Done ({metrics.length} metrics)
+          </Button>
+        </div>
+      )}
+
+      {/* Preset Metrics Library */}
+      {step === 'presets' && (
+        <div className="p-4 space-y-4">
+          <p className="text-muted-foreground text-sm">
+            Tap to add preset metrics. You can customize thresholds after adding.
+          </p>
+
+          <div className="space-y-3">
+            {PRESET_METRICS.map(category => {
+              const isExpanded = expandedCategory === category.id;
+              const addedCount = category.metrics.filter(m => isMetricAdded(m.id)).length;
+
+              return (
+                <Card key={category.id} className="overflow-hidden">
+                  <button
+                    className="w-full p-4 flex items-center gap-3 text-left"
+                    onClick={() => setExpandedCategory(isExpanded ? null : category.id)}
+                  >
+                    <span className="text-2xl">{category.icon}</span>
+                    <div className="flex-1">
+                      <div className="font-medium">{category.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {category.metrics.length} metrics
+                        {addedCount > 0 && ` · ${addedCount} added`}
+                      </div>
+                    </div>
+                    {isExpanded ? (
+                      <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-border divide-y divide-border">
+                      {category.metrics.map(preset => {
+                        const added = isMetricAdded(preset.id);
+                        return (
+                          <button
+                            key={preset.id}
+                            className={`w-full p-3 flex items-center gap-3 text-left transition-colors ${
+                              added ? 'bg-accent/10' : 'hover:bg-muted/50'
+                            }`}
+                            onClick={() => {
+                              if (!added) {
+                                handleAddPresetMetric(preset);
+                              }
+                            }}
+                            disabled={added}
+                          >
+                            <div className={`p-2 rounded-lg ${added ? 'bg-accent/20 text-accent' : 'bg-muted text-muted-foreground'}`}>
+                              {getMetricIcon(preset.icon || 'target')}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className={`font-medium ${added ? 'text-accent' : ''}`}>
+                                {preset.name}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {preset.type === 'boolean' && 'Yes/No'}
+                                {preset.type === 'number' && `${preset.comparison === 'gte' ? '≥' : preset.comparison === 'lte' ? '≤' : '='} ${preset.target} ${preset.unit || ''}`}
+                                {preset.type === 'count' && 'Counter'}
+                                {preset.type === 'photo' && 'Photo'}
+                                {preset.tracking ? ' · Tracking' : preset.required ? ' · Required' : ' · Optional'}
+                              </div>
+                            </div>
+                            {added ? (
+                              <CheckCircle className="w-5 h-5 text-accent" />
+                            ) : (
+                              <Plus className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+
+          <Button
+            className="w-full"
+            onClick={() => setStep('metrics')}
+          >
+            Done ({metrics.length} metrics added)
           </Button>
         </div>
       )}
